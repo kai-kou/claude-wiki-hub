@@ -1,0 +1,1 @@
+../../docs/rules/no-github-actions.md

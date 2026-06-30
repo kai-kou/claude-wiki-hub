@@ -1,0 +1,1 @@
+../../docs/rules/ai-reviewer-strategy.md

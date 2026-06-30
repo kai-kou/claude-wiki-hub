@@ -1,0 +1,1 @@
+../../docs/rules/hook-events-reference.md

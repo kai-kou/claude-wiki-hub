@@ -1,0 +1,1 @@
+../../docs/rules/self-review-checklist.md

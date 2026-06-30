@@ -1,0 +1,1 @@
+../../docs/rules/save-metadata-index.md

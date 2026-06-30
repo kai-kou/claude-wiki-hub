@@ -1,0 +1,1 @@
+../../docs/rules/github-mcp-fallback-patterns.md

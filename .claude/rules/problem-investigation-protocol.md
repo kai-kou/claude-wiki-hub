@@ -1,0 +1,1 @@
+../../docs/rules/problem-investigation-protocol.md

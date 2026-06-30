@@ -1,0 +1,1 @@
+../../docs/rules/lessons-management.md

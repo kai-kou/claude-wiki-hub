@@ -1,0 +1,1 @@
+../../docs/rules/discussion-whiteboard-rules.md

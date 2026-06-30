@@ -1,0 +1,1 @@
+../../docs/rules/git-lfs-safety-rules.md

@@ -1,0 +1,1 @@
+../../docs/rules/dynamic-workflows-rules.md

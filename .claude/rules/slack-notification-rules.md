@@ -1,0 +1,1 @@
+../../docs/rules/slack-notification-rules.md

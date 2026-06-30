@@ -1,0 +1,1 @@
+../../docs/rules/autonomous-operation-policy.md

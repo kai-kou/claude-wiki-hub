@@ -1,0 +1,43 @@
+# Claude Code local settings (never commit secrets)
+.claude/settings.local.json
+
+# Generated session/project state
+content/context/project_state.md
+content/pipeline-state/
+# 導出エフェメラル SQLite（query_index.py が all.jsonl から再構築・binary を git に commit しない・#26）
+content/index/all.db
+content/index/all.db-shm
+content/index/all.db-wal
+content/analytics/*
+
+# DB ファイル全般の安全網（専門チーム議論 #26 全員合意・エフェメラル DB を誤って commit しない）
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.duckdb
+# スプリント較正の実測データだけはコミット対象（session-sprint-rules.md §5/§6・#45）
+!content/analytics/sprint/
+# 月次コストレポートを永続化したい場合は下記行をコメントアウトして有効化（運用リポジトリ向け）
+# !content/analytics/cost_monthly/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# OS / editor
+.DS_Store
+*.swp
+
+# Secrets / env
+.env
+.env.*
+*.pem
+*.key
+.claude/worktrees/
