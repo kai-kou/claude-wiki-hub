@@ -42,8 +42,8 @@
 | 23 | `FileChanged` | ファイル変更時 | ⬜ 未採用 |
 | 24 | `WorktreeCreate` | git worktree 作成時 | ⬜ 未採用 |
 | 25 | `WorktreeRemove` | git worktree 削除時 | ⬜ 未採用 |
-| 26 | `PreCompact` | 圧縮開始前（matcher: manual/auto）。exit 2 で圧縮ブロック可 | ✅ **採用（pre-compact.sh・#23）** |
-| 27 | `PostCompact` | 圧縮完了後（matcher: manual/auto）。decision 制御なし | ✅ 採用（post-compact.sh） |
+| 26 | `PreCompact` | 圧縮開始前（matcher: manual/auto）。exit 2 で圧縮ブロック可 | ⬜ **未採用**（圧縮タイミングは Claude 標準 Auto Compaction に委ねる） |
+| 27 | `PostCompact` | 圧縮完了後（matcher: manual/auto）。decision 制御なし | ⬜ 未採用（同上） |
 | 28 | `Elicitation` | 入力要求ダイアログ時 | ⬜ 未採用 |
 | 29 | `ElicitationResult` | 入力要求の結果確定時 | ⬜ 未採用 |
 | 30 | `SessionEnd` | セッション終了時（matcher: clear/resume/logout/prompt_input_exit/bypass_permissions_disabled/other）。decision 制御なし | ⬜ **未採用（後述）** |
@@ -71,20 +71,22 @@
 - 既定は **非ブロッキング**（exit 0）。誤検知で正当作業を止めないため。真に破壊的なパターンを
   ブロックしたいプロジェクト向けに exit 2 のブロック例をコメントで残してある
 
-### PreCompact（pre-compact.sh）と PostCompact（post-compact.sh）の役割分担
-- **PreCompact**: 圧縮が始まる *前* に未コミット変更を WIP コミット＆push（L-100 の一次防御）。
-  圧縮処理中の不具合や圧縮後の SessionStart クリーンアップで作業が消える前に、最も早く確定させる
-- **PostCompact**: 圧縮 *後* のルール再確認リマインダー + symlink 同期 + 二次的な WIP セーフティネット。
-  PreCompact が確定済みなら working tree は clean になり二重コミットは発生しない
+### PreCompact / PostCompact は未採用（圧縮タイミングは Claude 標準に委ねる）
+- 圧縮タイミングを制御する env・フックは撤廃し、Claude Code 標準の Auto Compaction（約 95%
+  到達時の自動圧縮）に完全に委ねる方針（ユーザー明示決定）。`pre-compact.sh` / `post-compact.sh`
+  は削除済み。`PreCompact` / `PostCompact` は **プラットフォーム機能としては実在** するが本ベースでは採用しない。
+- 未コミット作業の保全は `Stop`（stop-router.sh）の WIP 自動コミットが担う。圧縮開始前の
+  一次防御（旧 pre-compact.sh）は持たないため、L-100 の SessionStart クリーンアップ対策は
+  「区切りで小まめにコミットする」運用でカバーする。
 
 ## 4. 未採用イベントの採否理由（明示）
 
 | イベント | 未採用の理由 |
 |---------|------------|
-| `SessionEnd` | WIP 保全は `Stop`（stop-router.sh）+ `PreCompact`/`PostCompact` で既にカバー済み。logout 時のクリーンアップが必要なプロジェクトのみ追加する（settings.json に `SessionEnd` を追記）。汎用ベースでは冗長コミットを避けるため未採用 |
+| `SessionEnd` | WIP 保全は `Stop`（stop-router.sh）でカバー済み。logout 時のクリーンアップが必要なプロジェクトのみ追加する（settings.json に `SessionEnd` を追記）。汎用ベースでは冗長コミットを避けるため未採用 |
 | `Notification` | decision 制御なしの観測専用。Slack 通知は `tools/slack_notify.py` で能動制御しており、idle/permission プロンプトを横取りする用途がないため未採用。observability が欲しいプロジェクトのみ採用 |
 | `StopFailure` | 出力・exit code が無視されるため副作用フックを置けない（API エラー時のログは別経路で取得） |
-| `PostToolBatch` / `InstructionsLoaded` 他 | 現行ハーネスの守備範囲（main 直 push 防止・PR フロー・圧縮保全）に必要十分。将来要件が出たら本表の採否を更新する |
+| `PostToolBatch` / `InstructionsLoaded` 他 | 現行ハーネスの守備範囲（main 直 push 防止・PR フロー・WIP 保全）に必要十分。将来要件が出たら本表の採否を更新する |
 
 ## 5. サブエージェント persistent memory の frontmatter キー（#23 検証）
 
@@ -115,6 +117,5 @@ memory: user   # user | project | local
 | ドキュメント | 関係 |
 |------------|------|
 | `.claude/settings.json` | フック登録の実体 |
-| `docs/rules/session-compression-rules.md` | PreCompact/PostCompact の運用文脈 |
 | `docs/rules/harness-escalation.md` | フック Lv3 昇格の判断 |
 | `docs/rules/lessons-core.md` | L-100（未コミット作業消失）の対策 |
