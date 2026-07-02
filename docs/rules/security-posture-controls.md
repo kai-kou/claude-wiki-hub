@@ -48,7 +48,7 @@
 | `pre-image-gen-check.sh` | PreToolUse(画像生成) | 画像生成前の予算・前提チェック |
 | `post-tool-use-validate.sh` | PostToolUse | 台本 JSON 等の物理バリデーション（Lv3） |
 | `post-tool-use-failure.sh` | PostToolUseFailure(Bash) | 失敗ハンドリング |
-| `stop-*.sh` / `post-compact.sh` / `session-start.sh` | Stop / PostCompact / SessionStart | 未コミット保護・衛生・ルール同期 |
+| `stop-*.sh` / `session-start.sh` | Stop / SessionStart | 未コミット保護・衛生・ルール同期 |
 
 → 破壊的・外向きの操作は **フックが最終防衛線** として検査する。
 
