@@ -29,10 +29,9 @@ modules:
   session-safety:
     enabled: true
     required: true
-    description: "ユーザー確認前コミット・圧縮対応・マルチセッション競合防止・スプリント運用"
+    description: "ユーザー確認前コミット・マルチセッション競合防止・スプリント運用"
     rules:
       - session-safety-rules.md
-      - session-compression-rules.md
       - session-concurrency-rules.md
       - session-sprint-rules.md
       - user-instruction-issue-rules.md
@@ -41,7 +40,6 @@ modules:
       - apply-base   # 自然文「claude-code-base を反映して」で適用・再同期を起動（対象へ伝播し再同期に使う）
     hooks:
       - session-start.sh
-      - post-compact.sh
       - stop-router.sh
       - stop-git-check.sh
       - stop-slack-notify.sh

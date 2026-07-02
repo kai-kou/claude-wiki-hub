@@ -37,7 +37,6 @@ ESSENTIAL_RULES=(
   "datetime-rules.md"
   "lessons-core.md"
   "pr-review-flow-summary.md"
-  "session-compression-rules.md"
   "session-safety-rules.md"
   "session-sprint-rules.md"
   "user-confirmation-minimization.md"
