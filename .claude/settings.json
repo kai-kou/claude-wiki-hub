@@ -4,7 +4,6 @@
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "1",
-    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "400000",
     "CLAUDE_CODE_TOKEN_LIMIT_WARN": "350000",
     "CLAUDE_CODE_TOKEN_LIMIT_HARD": "380000"
   },
@@ -122,12 +121,6 @@
     ],
     "PostToolUseFailure": [
       { "matcher": "Bash", "hooks": [ { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-tool-use-failure.sh" } ] }
-    ],
-    "PreCompact": [
-      { "hooks": [ { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-compact.sh" } ] }
-    ],
-    "PostCompact": [
-      { "hooks": [ { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-compact.sh" } ] }
     ],
     "Stop": [
       { "hooks": [ { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/stop-router.sh" } ] }
