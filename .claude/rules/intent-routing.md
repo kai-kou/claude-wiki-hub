@@ -1,0 +1,1 @@
+../../docs/rules/intent-routing.md
