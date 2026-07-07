@@ -169,11 +169,9 @@ def build_lead_prompt(discussion_id: str, spec: dict, targets: list[str], rounds
 
 
 def run_claude(prompt: str, model: str, allowed_tools: str,
-               max_budget_usd: float | None, timeout: int) -> dict:
+               timeout: int) -> dict:
     cmd = ["claude", "-p", prompt, "--model", model, "--output-format", "json",
            "--allowedTools", allowed_tools, "--fallback-model", "claude-haiku-4-5"]
-    if max_budget_usd is not None and not USE_SUBSCRIPTION:
-        cmd += ["--max-budget-usd", str(max_budget_usd)]
     child_env = None
     if USE_SUBSCRIPTION:
         child_env = {k: v for k, v in os.environ.items() if k not in _API_KEY_ENV_VARS}
@@ -219,7 +217,6 @@ def main() -> int:
     ap.add_argument("--targets", default="", help="レビュー対象パス（カンマ区切り）")
     ap.add_argument("--rounds", type=int, default=2)
     ap.add_argument("--model", default=DEFAULT_MODEL)
-    ap.add_argument("--max-budget-usd", type=float, default=8.0)
     ap.add_argument("--timeout", type=int, default=1800)
     ap.add_argument("--allowed-tools", default=DEFAULT_ALLOWED_TOOLS)
     ap.add_argument("--dry-run", action="store_true")
@@ -258,14 +255,14 @@ def main() -> int:
         print("[dry-run] init:", " ".join(init_cmd))
         print("[dry-run] claude -p は cwd=一時ディレクトリ で起動（リポジトリへは絶対パス）")
         print("[dry-run] model:", args.model, "/ allowedTools:", args.allowed_tools)
-        print("[dry-run] budget:", "サブスク認証" if USE_SUBSCRIPTION else f"${args.max_budget_usd}")
+        print("[dry-run] 認証:", "サブスク認証" if USE_SUBSCRIPTION else "API従量課金")
         print("\n===== lead プロンプト =====\n")
         print(prompt)
         return 0
 
     subprocess.run(init_cmd, cwd=str(REPO_ROOT), check=True)
     print(f"[1/2] 議論実行中（claude -p model={args.model}・rounds={args.rounds}・cwd=tempdir）...")
-    data = run_claude(prompt, args.model, args.allowed_tools, args.max_budget_usd, args.timeout)
+    data = run_claude(prompt, args.model, args.allowed_tools, args.timeout)
     result = (data.get("result") or "").strip()
     cost = float(data.get("total_cost_usd") or 0.0)
 

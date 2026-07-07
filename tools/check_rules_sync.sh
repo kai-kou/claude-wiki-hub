@@ -181,38 +181,6 @@ for claude_file in "$CLAUDE_RULES"/*.md; do
   fi
 done
 
-# --- Hot 層サイズガード（Haiku Context Overflow 再発防止・haiku-context-overflow-followup 議論）---
-# ESSENTIAL_RULES を全て symlink しても、CLAUDE.md + Hot 層の合計文字数自体が大きいと
-# Haiku(200k)の常駐マージンを圧迫する（余剰 symlink 剪定だけでは解消しない独立リスク）。
-# 保守的なトークン推定（CJK×1.5 + EN×0.40・議論の token-budget-forensics 実測係数）で
-# 閾値超過を警告する（exit code には影響させない・既存の symlink 同期チェックとは別軸）。
-if command -v python3 &>/dev/null; then
-  if ! python3 - "$REPO_ROOT" <<'PYEOF'
-import sys, re, glob, os
-repo_root = sys.argv[1]
-paths = [os.path.join(repo_root, "CLAUDE.md")] + glob.glob(os.path.join(repo_root, ".claude/rules/*.md"))
-combined = ""
-for p in paths:
-    if os.path.exists(p):
-        with open(p, encoding="utf-8", errors="ignore") as f:
-            combined += f.read()
-cjk = len(re.findall(r'[　-鿿＀-￯]', combined))
-en = len(combined) - cjk
-tok_conservative = cjk * 1.5 + en * 0.40
-THRESHOLD = 50000
-if tok_conservative > THRESHOLD:
-    print(f"[WARN] Hot 層（CLAUDE.md + .claude/rules/）推定 {tok_conservative:.0f} tok（保守推定）が閾値 {THRESHOLD} tok を超過しています。Haiku(200k)の常駐マージンが薄い可能性があります。docs/rules/ の内容圧縮・Warm 降格を検討してください。", file=sys.stderr)
-else:
-    print(f"[OK] Hot 層サイズ: 推定 {tok_conservative:.0f} tok（保守推定・閾値 {THRESHOLD} tok 以下）")
-PYEOF
-  then
-    # サイレント失敗防止（Copilot レビュー指摘）: exit code は維持しつつ推定できなかったことを可視化する
-    echo "[WARN] Hot 層サイズ推定の実行に失敗しました（python3 エラー）。手動で内容量を確認してください。" >&2
-  fi
-else
-  echo "[WARN] python3 が見つからないため Hot 層サイズ推定をスキップしました。" >&2
-fi
-
 if [[ ${#missing[@]} -eq 0 && ${#broken[@]} -eq 0 && ${#extra[@]} -eq 0 && ${#mispointed[@]} -eq 0 ]]; then
   echo "[OK] docs/rules/ と .claude/rules/ は同期されています"
   exit 0

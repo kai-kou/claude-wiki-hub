@@ -25,7 +25,6 @@
 | 外部 API に渡す ISO 8601 タイムスタンプ | GitHub API の `after_timestamp`（`date -u +"%Y-%m-%dT%H:%M:%SZ"`） | API 仕様が UTC `Z` 形式を要求する。JST 化すると壊れる |
 | 内部の経過時間・stale 判定計算 | `check_pending_pr_reviews.py` / `pipeline_state.py` の `datetime.now(timezone.utc)` 差分 | 差分計算には TZ 表記が不要（表示しない）。基準が UTC で一貫していれば正しい |
 | エポック秒・mtime 差分 | `date +%s` | TZ 非依存 |
-| UTC↔JST↔PT 換算表 | `token-optimization-rules.md` のピーク帯換算 | 換算が目的なので UTC 併記が正しい |
 
 **判定基準**: 「その日時を **人間が読む / 記録として残す** か？」→ YES なら JST。「**機械が解釈する / 内部計算にのみ使う**（表示しない）か？」→ NO なら UTC 維持で可。
 
@@ -95,7 +94,6 @@ rereview_ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 | ドキュメント | 関係 |
 |------------|------|
 | `docs/rules/session-safety-rules.md` | 停止時刻テンプレート（JST 明示の模範） |
-| `docs/rules/token-optimization-rules.md` | UTC↔JST↔PT 換算表（換算目的の UTC 併記は正） |
 | `docs/rules/self-review-checklist.md` | TZ 未指定 `datetime.now()` の検出 |
 | `tools/check_datetime_tz.py` | 表示・記録系の TZ 未指定 `datetime` 残存を検出する機械チェック（Issue #80） |
 | `tools/generate_project_context.py` | スナップショット時刻（JST） |

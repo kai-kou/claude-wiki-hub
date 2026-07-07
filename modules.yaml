@@ -149,7 +149,6 @@ modules:
       - agent-team.md
       - agent-team-summary.md
       - agent-constitution.md
-      - token-optimization-rules.md
       - claude-code-optimization.md
       - discussion-whiteboard-rules.md
     tools:

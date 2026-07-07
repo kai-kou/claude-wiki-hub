@@ -7,7 +7,7 @@ Claude Code のネイティブ /deep-research（Dynamic Workflows）を起動し
 
 背景・位置づけ（research-runner SKILL.md「採用方針」）:
   - 主エンジン（本ツール）: ネイティブ /deep-research（Opus orchestrator・#2417）+ 正規化レイヤー
-  - 第2エンジン: Gemini Deep Research Max（本ツールが失敗 or 月次予算ゲート超過時）
+  - 第2エンジン: Gemini Deep Research Max（本ツールが失敗時）
   - フォールバック: DIY（上記2つが失敗時の最終手段）
 
 実行モデル（2026-06-23 更新）:
@@ -18,11 +18,8 @@ Claude Code のネイティブ /deep-research（Dynamic Workflows）を起動し
   引用付きレポートを生成（fixtures/ にサンプル保存）。
 
 使い方（{ID} は任意のリサーチ識別子 slug）:
-  # フル（検索 + 正規化）— 予算上限なし（検証用途では上限を付けない方針）
+  # フル（検索 + 正規化）
   python3 tools/run_deep_research_workflow.py {ID}
-
-  # 予算上限を付ける（API 従量経路時の保険・サブスク経路では無視される）
-  python3 tools/run_deep_research_workflow.py {ID} --max-budget-usd 8
 
   # 正規化のみ（既存の生レポートを schema 化）— Gemini NG → 再正規化に便利
   python3 tools/run_deep_research_workflow.py {ID} \
@@ -65,22 +62,14 @@ DEFAULT_NORMALIZE_MODEL = "claude-sonnet-4-6"
 USE_SUBSCRIPTION = os.getenv("DEEP_RESEARCH_USE_SUBSCRIPTION", "1") != "0"
 # サブスク認証を強制するため子プロセス env から除去する API キー系変数
 _API_KEY_ENV_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
-# コストガード（#2411 飼い主指示で /deep-research を主エンジン化・モデルは #2417 で Opus 確定）:
 # 既定 orchestrator は Opus（実測 ~$18.7/本・約36分 wall-clock・#2429 V167 実測）。Sonnet 降格は実測でコスト不変
 # （$18.8≒$18.7）かつ Opus より遅い（Sonnet 約52分 vs Opus 約36分・≒1.4倍）ため不採用 → 速度優先で Opus（モデル確定 #2417）。
-# 主エンジンだが月 $50 枠を Gemini/DIY と共有するため、月次ゲートを「deep-research→Gemini 切替点」として使う:
-# - 1本あたり既定上限 $20（Opus 実走 ~$18.7 を許容しつつ暴走を防止。検証時は上書き可）
-# - 当月の本エンジン累計が $40 を超えたら起動拒否 → Gemini にフォールバック（Opus ~$18.7 なら約2本/月で切替）
-DEFAULT_MAX_BUDGET_USD = 20.0
-MONTHLY_BUDGET_GATE_USD = 40.0   # /deep-research 単体の月次ゲート（超過→Gemini フォールバック）
-MONTHLY_BUDGET_LIMIT_USD = 50.0  # プロジェクト全体の月次上限（run_deep_research.py と整合）
-WORKFLOW_ENGINE_PREFIX = "deep-research-workflow"
 # /deep-research のサブエージェントが使う組み込みツール（root では allowedTools で事前許可する）。
 # 🔴 Bash/Write は必須: /deep-research（Dynamic Workflows）はオーケストレーションスクリプトの
 #   実行に Bash を、中間成果物の保存に Write を使う。これらを外すと -p 非対話モードで
 #   権限待ちハングする（2026-06-01 実機検証: 除外で 7分超 [1/3] 停止・付与で ~90秒完走）。
 # プロンプトインジェクション（取得ページ経由の任意コマンド実行）対策は、サブプロセスを
-#   一時 cwd（TemporaryDirectory）に隔離し + `--max-budget-usd` 上限で暴走を抑制することで緩和する。
+#   一時 cwd（TemporaryDirectory）に隔離し、実行後に必ず破棄することで緩和する。
 SEARCH_ALLOWED_TOOLS = "Workflow Agent Task WebSearch WebFetch Read Bash Write"
 
 # /deep-research に「全文をこのファイルへ Write せよ」と指示する作業ファイル名（#2704）。
@@ -175,7 +164,7 @@ def read_prompt(research_id: str) -> str:
 
 
 def _run_claude(prompt: str, model: str, allowed_tools: str | None,
-                max_budget_usd: float | None, timeout: int,
+                timeout: int,
                 work_dir: str | None = None) -> dict:
     """claude -p を JSON 出力で実行し、パース済み結果 dict を返す。
 
@@ -187,10 +176,6 @@ def _run_claude(prompt: str, model: str, allowed_tools: str | None,
            "--fallback-model", "claude-sonnet-4-6"]
     if allowed_tools:
         cmd += ["--allowedTools", allowed_tools]
-    # サブスク経路（#2562）では API 課金用の予算上限を付けない（上限は週次クォータが担保）。
-    # 従来 API 経路（USE_SUBSCRIPTION=0）では従来どおり --max-budget-usd を付与する。
-    if max_budget_usd is not None and not USE_SUBSCRIPTION:
-        cmd += ["--max-budget-usd", str(max_budget_usd)]
     # サブスク認証を強制する場合、子プロセス env から API キー系変数を除去する（#2562）。
     # API キーが残っていると API 従量課金経路になるため確定的に除去する。
     child_env = None
@@ -267,7 +252,7 @@ def _harvest_report_file(work_dir: Path) -> tuple[str, str | None]:
     return _read(best), best.name
 
 
-def run_deep_research(prompt: str, model: str, max_budget_usd: float | None,
+def run_deep_research(prompt: str, model: str,
                       timeout: int = DEFAULT_TIMEOUT_SEC,
                       allowed_tools: str = SEARCH_ALLOWED_TOOLS) -> tuple[str, float, dict]:
     """ネイティブ /deep-research をサブプロセス起動し、(report_md, cost, meta) を返す。
@@ -285,7 +270,7 @@ def run_deep_research(prompt: str, model: str, max_budget_usd: float | None,
     )
     work_dir = Path(tempfile.mkdtemp(prefix="deepresearch_"))
     try:
-        data = _run_claude(dr_prompt, model, allowed_tools, max_budget_usd,
+        data = _run_claude(dr_prompt, model, allowed_tools,
                            timeout, work_dir=str(work_dir))
         result_text = (data.get("result") or "").strip()
         cost = float(data.get("total_cost_usd") or 0.0)
@@ -370,7 +355,7 @@ def normalize_to_schema(report_md: str, research_id: str, theme: str, model: str
         f"{report_md}\n"
         "=== 引用付きレポート ここまで ==="
     )
-    data = _run_claude(instruction, model, allowed_tools="", max_budget_usd=None, timeout=timeout)
+    data = _run_claude(instruction, model, allowed_tools="", timeout=timeout)
     raw = (data.get("result") or "").strip()
     schema_obj = _extract_json(raw)
     if schema_obj is None:
@@ -436,11 +421,8 @@ def write_outputs(research_id: str, report_md: str, schema_obj: dict,
 def log_cost(research_id: str, engine: str, cost: float, duration: float) -> None:
     COST_LOG.parent.mkdir(parents=True, exist_ok=True)
     # 既存集計（run_deep_research.py）が timestamp キー前提のため timestamp で書き込む
-    # （ts だと月次コスト集計・$50 サーキットブレーカーが本エンジン分を取りこぼす）
-    # サブスク経路（#2562）は実課金が発生しない（週次クォータの枠内）ため、budget 集計対象の
-    # cost_usd は 0.0 とし、表示用の実測トークン価値は virtual_cost_usd に分離記録する
-    # （#2563 Gemini レビュー対策A）。これにより get_monthly_cost_total / month_to_date_cost が
-    # 実課金（Gemini/DIY）のみを集計し、$50 サーキットブレーカーが正しく機能する。
+    # サブスク経路（#2562）は実課金が発生しない（週次クォータの枠内）ため cost_usd は 0.0 とし、
+    # 表示用の実測トークン価値は virtual_cost_usd に分離記録する（#2563 Gemini レビュー対策A）。
     rec = {"timestamp": _now_iso(), "research_id": research_id, "engine": engine,
            "cost_usd": 0.0 if USE_SUBSCRIPTION else round(cost, 6),
            "duration_seconds": round(duration, 1)}
@@ -448,34 +430,6 @@ def log_cost(research_id: str, engine: str, cost: float, duration: float) -> Non
         rec["virtual_cost_usd"] = round(cost, 6)
     with COST_LOG.open("a", encoding="utf-8") as f:
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-
-
-def month_to_date_cost(engine_prefix: str = WORKFLOW_ENGINE_PREFIX) -> float:
-    """当月（JST）の本エンジン累計コスト USD を research_cost_log.jsonl から集計する。
-    既存集計と整合させるため timestamp キー（無ければ ts）を見る。"""
-    if not COST_LOG.exists():
-        return 0.0
-    ym = _dt.datetime.now(JST).strftime("%Y-%m")
-    total = 0.0
-    for line in COST_LOG.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            rec = json.loads(line)
-            if not isinstance(rec, dict):
-                continue
-        except json.JSONDecodeError:
-            continue
-        if not str(rec.get("engine") or "").startswith(engine_prefix):
-            continue
-        ts = str(rec.get("timestamp") or rec.get("ts") or "")
-        if ts[:7] == ym:
-            try:
-                total += float(rec.get("cost_usd") or 0.0)
-            except (ValueError, TypeError):
-                pass
-    return total
 
 
 def _theme_from_prompt(prompt: str, research_id: str) -> str:
@@ -530,11 +484,6 @@ def main() -> int:
     ap.add_argument("research_id", nargs="?", help="リサーチ ID（任意の slug・例: my-topic）。--self-test 時は省略可")
     ap.add_argument("--engine-model", default=DEFAULT_ENGINE_MODEL)
     ap.add_argument("--normalize-model", default=DEFAULT_NORMALIZE_MODEL)
-    ap.add_argument("--max-budget-usd", type=float, default=DEFAULT_MAX_BUDGET_USD,
-                    help=f"検索サブプロセスの予算上限（既定: ${DEFAULT_MAX_BUDGET_USD}）。"
-                         "検証で無制限にしたい場合は大きい値を明示指定する")
-    ap.add_argument("--force", action="store_true",
-                    help=f"当月累計が ${MONTHLY_BUDGET_GATE_USD} を超えていても強制実行する")
     ap.add_argument("--normalize-only", action="store_true",
                     help="検索をスキップし --report のレポートを正規化のみ行う")
     ap.add_argument("--report", help="--normalize-only 時の入力レポート md パス")
@@ -568,9 +517,7 @@ def main() -> int:
     if args.dry_run:
         dr = f'/deep-research {prompt[:120]}...'
         print("[dry-run] 検索:", ["claude", "-p", dr, "--model", args.engine_model,
-              "--output-format", "json", "--allowedTools", allowed_tools,
-              *(["--max-budget-usd", str(args.max_budget_usd)]
-                if args.max_budget_usd is not None and not USE_SUBSCRIPTION else [])])
+              "--output-format", "json", "--allowedTools", allowed_tools])
         print("[dry-run] 正規化モデル:", args.normalize_model)
         return 0
 
@@ -587,32 +534,11 @@ def main() -> int:
             if m:
                 theme = m.group(1).strip()
     else:
-        if USE_SUBSCRIPTION:
-            # サブスク経路（#2562・#2563 対策C）: /deep-research は週次クォータの枠内で実行され
-            # 追加 $ 課金が発生しないため、月次予算ゲートはバイパスする（サブスク実行は常に無料）。
-            # 実課金（Gemini/DIY フォールバック）に対するブレーカーは run_deep_research.py 側で維持。
-            print("[0/3] サブスク経路（追加$ゼロ・週次クォータ枠内）のため月次予算ゲートをバイパス")
-        else:
-            # 月次予算チェック（#2394/#2411）。高コストエンジンの $50 枠圧迫を防ぐ（API 従量経路時）
-            # ① プロジェクト全体（全エンジン）の月次上限 $50 をまず確認（run_deep_research.py と整合）
-            total_mtd = month_to_date_cost(engine_prefix="")
-            if total_mtd > MONTHLY_BUDGET_LIMIT_USD and not args.force:
-                print(f"ERROR: 当月のリサーチ全体累計が ${total_mtd:.2f}（上限 ${MONTHLY_BUDGET_LIMIT_USD}）を超過。"
-                      "--force で強制実行可。", file=sys.stderr)
-                return 3
-            # ② /deep-research 単体ゲート（超過→Gemini フォールバック）
-            mtd = month_to_date_cost()
-            if mtd > MONTHLY_BUDGET_GATE_USD and not args.force:
-                print(f"ERROR: 当月の /deep-research 累計が ${mtd:.2f}（ゲート ${MONTHLY_BUDGET_GATE_USD}）を超過。"
-                      "Gemini/DIY を使うか、--force で強制実行。", file=sys.stderr)
-                return 3
-            print(f"[0/3] 当月累計 /deep-research ${mtd:.2f}/ゲート${MONTHLY_BUDGET_GATE_USD} ・全体 ${total_mtd:.2f}/上限${MONTHLY_BUDGET_LIMIT_USD}")
-        # サブスク/API 両経路で共通: ネイティブ /deep-research を実行する
-        budget_note = "サブスク認証" if USE_SUBSCRIPTION else f"上限 ${args.max_budget_usd}"
-        print(f"[1/3] ネイティブ /deep-research 実行中（model={args.engine_model}・{budget_note}）...")
+        engine_note = "サブスク認証" if USE_SUBSCRIPTION else "API従量課金"
+        print(f"[1/3] ネイティブ /deep-research 実行中（model={args.engine_model}・{engine_note}）...")
         try:
             report_md, cost, meta = run_deep_research(
-                prompt, args.engine_model, args.max_budget_usd, args.timeout,
+                prompt, args.engine_model, args.timeout,
                 allowed_tools=allowed_tools)
         except RateLimitedError as exc:
             # レート枠超過（capacity）→ EXIT=6（#2814）。Gemini へ即フォールバックせず、

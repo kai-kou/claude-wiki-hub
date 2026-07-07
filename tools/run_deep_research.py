@@ -7,7 +7,6 @@ Deep Research のフォールバックランナー（Gemini / DIY）。
 本ファイルは主エンジンが真に失敗したときの第2/最終フォールバックを担う:
 - 第2エンジン: Gemini Deep Research Max API（`tools/run_deep_research_gemini.py`）
 - 最終フォールバック: DIY (Sonnet 4.6 + WebSearch) 本ファイル内の DIY 実装
-- 月コスト上限（API 従量経路時）: $50（warning $45・breaker $50）
 
 呼び出し方法（{ID} は任意のリサーチ識別子 slug）:
     python3 tools/run_deep_research.py {ID}
@@ -42,12 +41,6 @@ RESEARCH_DIR = REPO_ROOT / "content" / "research"
 COST_LOG = REPO_ROOT / "content" / "pipeline-state" / "research_cost_log.jsonl"
 # Gemini→DIY フォールバック発動の記録（L-094 可視化・サイレントフォールバック防止）
 FALLBACK_LOG = REPO_ROOT / "content" / "pipeline-state" / "research_fallback_log.jsonl"
-MONTHLY_BUDGET_USD = 50.0
-MONTHLY_WARNING_USD = 45.0
-
-# サブスク週次枠経路（#2562/#2563）: 実課金しない /deep-research のコストは
-# run_deep_research_workflow.py の log_cost が cost_usd=0.0 で記録する（対策A）。本ランナーは
-# Gemini/DIY（実課金）用のため check_budget はバイパスせず常に有効にしておく（対策B）。
 
 
 @dataclass
@@ -196,29 +189,6 @@ def load_prompt(research_id: str) -> tuple[str, str]:
     return theme or research_id, text
 
 
-def get_monthly_cost_total() -> float:
-    """当月のリサーチ累計コストを返す（cost_log.jsonl から算出）。"""
-    if not COST_LOG.exists():
-        return 0.0
-    now = datetime.now(JST)
-    total = 0.0
-    for line in COST_LOG.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        try:
-            ts = datetime.fromisoformat(entry.get("timestamp", ""))
-            if ts.year == now.year and ts.month == now.month:
-                total += float(entry.get("cost_usd", 0.0))
-        except (ValueError, TypeError):
-            # 破損行・手動編集・timestamp 欠落に対する堅牢性（行をスキップ）
-            continue
-    return total
-
-
 def append_cost_log(result: RunResult) -> None:
     """コスト記録を JSON Lines に追記する。"""
     COST_LOG.parent.mkdir(parents=True, exist_ok=True)
@@ -251,26 +221,6 @@ def append_fallback_log(research_id: str, reason: str) -> None:
     }
     with FALLBACK_LOG.open("a", encoding="utf-8") as fp:
         fp.write(json.dumps(entry, ensure_ascii=False) + "\n")
-
-
-def check_budget(estimated_cost: float) -> str | None:
-    """予算超過判定。サーキットブレーカー時は理由文字列を返す（None ならOK）。"""
-    # サブスク経路（#2562）の /deep-research コストは research_cost_log.jsonl に cost_usd=0.0 で
-    # 記録される（#2563 対策A・run_deep_research_workflow.py log_cost）ため、get_monthly_cost_total は
-    # 実課金（Gemini/DIY）のみを集計する。よって本ブレーカーはサブスク経路でも誤発火せず、
-    # フォールバック（実課金）に対する $50 安全ガードを常に維持する。
-    current = get_monthly_cost_total()
-    projected = current + estimated_cost
-    if projected >= MONTHLY_BUDGET_USD:
-        return (
-            f"サーキットブレーカー発動: 当月累計 ${current:.2f} + 見積 ${estimated_cost:.2f} = "
-            f"${projected:.2f} >= 上限 ${MONTHLY_BUDGET_USD:.2f}"
-        )
-    if projected >= MONTHLY_WARNING_USD:
-        sys.stderr.write(
-            f"[WARN] 当月累計が ${projected:.2f} に到達。$45 警告ライン超過（上限$50）。\n"
-        )
-    return None
 
 
 def run_diy(research_id: str, theme: str, prompt_text: str) -> RunResult:
@@ -376,15 +326,11 @@ def main() -> int:
         default="gemini",
         help="メインエンジン（既定: gemini）。フォールバックは自動で diy に切替",
     )
-    parser.add_argument("--dry-run", action="store_true", help="実行せず予算チェックのみ")
+    parser.add_argument("--dry-run", action="store_true", help="実行せず見積りのみ表示")
     args = parser.parse_args()
 
     theme, prompt_text = load_prompt(args.research_id)
     estimated = 5.0 if args.engine == "gemini" else 0.55
-    breaker = check_budget(estimated)
-    if breaker:
-        sys.stderr.write(f"[ERROR] {breaker}\n")
-        return 2
     if args.dry_run:
         print(f"[DRY-RUN] {args.research_id} / engine={args.engine} / 見積 ${estimated:.2f}")
         return 0

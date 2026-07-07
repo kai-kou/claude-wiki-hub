@@ -209,4 +209,3 @@ multi-series バックテスト対応を実装したにゃ:
 | `docs/rules/completion-report-rules.md` | 最終報告のアウトカム中心構造（本ルールと一対） |
 | `docs/rules/progress-reporting-rules.md` | 制作系長時間処理の進捗報告（本ルールの適用外領域） |
 | `docs/rules/session-safety-rules.md` | タイムアウト3種別・8ツール制限・Read limit（中間出力 PUSH 側） |
-| `docs/rules/token-optimization-rules.md` | トークン消費最適化（本ルールは出力側の最適化） |
