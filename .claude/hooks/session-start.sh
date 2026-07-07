@@ -226,12 +226,11 @@ fi
 # 明示的に警告する。
 if [[ -x "${PROJECT_DIR}/tools/check_rules_sync.sh" ]]; then
   if sync_output=$("${PROJECT_DIR}/tools/check_rules_sync.sh" --fix 2>&1); then
-    # WARN も検知対象に含める: Hot 層サイズガードの [WARN] 行はここでマッチしないと
-    # 「[rules-sync] OK」に握りつぶされ、閾値超過の予兆シグナルが無音で消える
-    # （Copilot レビュー指摘 #75・PR がまさに防ごうとしている無音失敗パターンの再発）。
+    # WARN も検知対象に含める: rules-extra.conf の typo エントリ等の [WARN] 行はここで
+    # マッチしないと「[rules-sync] OK」に握りつぶされ、無音失敗になる（Copilot レビュー指摘 #75）。
     echo "$sync_output" | grep -qE "FIXED|NG|WARN" && echo "[rules-sync] $sync_output" >&2 || echo "[rules-sync] OK" >&2
   else
-    echo "[rules-sync] ⚠️ check_rules_sync.sh --fix が失敗しました（exit≠0）。Hot 層が Haiku(200k)常駐上限を超過している可能性があります。手動で bash \"${PROJECT_DIR}/tools/check_rules_sync.sh\" --fix を確認してください。出力: $sync_output" >&2
+    echo "[rules-sync] ⚠️ check_rules_sync.sh --fix が失敗しました（exit≠0）。手動で bash \"${PROJECT_DIR}/tools/check_rules_sync.sh\" --fix を確認してください。出力: $sync_output" >&2
   fi
 fi
 
