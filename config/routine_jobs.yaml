@@ -1,0 +1,103 @@
+# 定期実行ジョブ定義（cron テーブル）
+#
+# ■ これは何か
+#   Routines は **1 つだけ**（薄いディスパッチャ・毎朝 8:00 JST 発火）にし、「何を・いつ動かすか」は
+#   このファイルで一元管理する。ジョブの追加・変更・停止は **この YAML を編集して PR するだけ**で完結し、
+#   ルーティン本体を変更する必要がない（更新の手間ゼロ化）。ルーティン本体の作成・変更は Claude が
+#   claude-code-remote MCP（create_trigger / update_trigger）で代行する（docs/setup/routines-setup.md）。
+#
+# ■ 使われ方
+#   単一ルーティンが毎回 `python3 tools/routine_scheduler.py --due` を実行し、
+#   いま due なジョブだけを取り出して instructions に従って作業する（docs/automation/routine-dispatch.md）。
+#
+# ■ cron（5 フィールド: 分 時 日 月 曜日・JST 基準。曜日 0=日..6=土）
+#   *  /  ,  -  */n をサポート。例: "0 7 * * 0"=毎週日曜7:00 / "0 7 * * 1-5"=平日7:00 / "0 9 1 * *"=毎月1日9:00
+#   ⚠️ 日次運用（毎朝 8:00 JST 発火・window 24h）では、ジョブの時刻を **発火時刻より前（推奨 07:00）** に
+#   書くこと。08:00 以降にすると「その曜日の翌日の発火」で拾われ、意図した曜日の翌日に実行される。
+#
+# ■ window_hours
+#   due 判定の窓。**ルーティン本体の実行間隔に一致させる**（日次運用=24・毎時運用=1）。
+#   既定の単一ルーティンは「日次・毎朝 8:00 JST」を推奨するため 24。毎時運用にするなら 1 に変更し、
+#   ルーティン本体も毎時 cron にする。
+#
+# ■ 増やすとき
+#   - 同じ日次ルーティンの範囲内（1日1回の粒度）で増やすなら、jobs に行を足すだけ（ルーティン変更不要）。
+#   - 1日複数回など細かい時刻制御が要るなら、window_hours を 1 にして、ルーティン本体を毎時 cron に
+#     切り替える（Claude が update_trigger で 1 度だけ代行。以降の増減は再びこの YAML だけで完結）。
+
+window_hours: 24
+
+jobs:
+  - id: issue-consume
+    cron: "0 7 * * *"         # 毎日 07:00 JST（毎朝 8:00 発火の当日窓に入る・日次ディスパッチャごとに due）
+    enabled: true
+    model: sonnet
+    title: 登録済み Issue の定期消化（waiting-claude の自律処理）
+    instructions: |
+      status:waiting-claude ラベルの open Issue を優先度（priority:critical > high > medium > low）と
+      作成が古い順で 1 件だけ選ぶ。status:in-progress の Issue が既にあれば他セッション作業中とみなし
+      スキップする（CP-4）。選んだ Issue に status:in-progress ロックを先付けし、
+      docs/rules/session-sprint-rules.md 準拠のスプリントプランニングコメントを投稿してから着手する。
+      実装 → セルフレビュー → PR 作成 → AI レビュー対応 → 自動マージまで自律実行する
+      （docs/rules/pr-review-flow-summary.md）。対象が 0 件なら「対象なし」を 1 行報告して no-op で
+      終了する（無理に作業を作らない）。作業は claude/ ブランチ + PR（main 直 push 禁止）。日時は JST。
+      本ジョブは Issue 操作・自動マージに GitHub MCP を使うため PAT(GH_TOKEN)登録を前提とする。PAT 未登録時は
+      「PAT 未登録のためスキップ」と報告し、何も行わずに早期終了する。
+
+  - id: wiki-lint
+    cron: "0 7 * * 0"         # 毎週日曜 07:00 JST（日曜朝 8:00 の発火で実行される）
+    enabled: true
+    model: sonnet
+    title: 週次 wiki lint（データ健全性の維持）
+    instructions: |
+      docs/rules/wiki-operations.md の「操作 3: Lint」に従い、wiki/ の健全性を点検する。
+      検出対象: (1) ページ間の矛盾（raw/ を正として是正）(2) 陳腐化・リンク切れ
+      (3) wiki/index.md からも他ページからもリンクされない孤立ページ (4) 欠落した相互参照（related）
+      (5) index と実体のデータギャップ。
+      自動修正できるものは修正し、判断が要るものは type:improvement ラベルの GitHub Issue を起票する。
+      作業は claude/ ブランチ + PR（main 直 push 禁止）。日時は JST。変更が無ければ「lint 検出ゼロ」と報告。
+      PR 作成 → AI レビュー対応 → 自動マージまで Claude が自律実行する(docs/rules/pr-review-flow.md)。
+      自動マージは GitHub MCP 依存のため本ジョブは PAT(GH_TOKEN)登録を前提とする。PAT 未登録時は
+      「PAT 未登録のためスキップ」と報告し、何も行わずに早期終了する（main 直 push は禁止のため直コミットは試みない）。
+
+  - id: research-ingest
+    cron: "0 7 * * 3"         # 毎週水曜 07:00 JST
+    enabled: true
+    model: opus
+    title: 定期リサーチ → wiki ingest（関心トピックの自動更新）
+    instructions: |
+      ideas/ と wiki/preferences.md（あれば）から関心トピックを 1 つ選び、research-runner スキルで
+      ディープリサーチする（docs/rules/intent-routing.md R-5）。成果物を wiki-operations.md「操作 1: Ingest」
+      に従い wiki/ に取り込み（wiki/topics/ に要約ページ作成・wiki/index.md 登録・wiki/log.md 追記・
+      相互参照更新）、引用（出典）を必ず残す。作業は claude/ ブランチ + PR。日時は JST。
+      PR 作成 → AI レビュー対応 → 自動マージまで Claude が自律実行する(docs/rules/pr-review-flow.md)。
+      自動マージは GitHub MCP 依存のため本ジョブは PAT(GH_TOKEN)登録を前提とする。PAT 未登録時は
+      「PAT 未登録のためスキップ」と報告し、何も行わずに早期終了する（main 直 push は禁止のため直コミットは試みない）。
+
+  - id: repo-watch
+    cron: "0 7 * * 1-5"       # 平日 07:00 JST（平日朝 8:00 の発火で実行される）
+    enabled: true
+    model: haiku
+    title: リポジトリ監視 → アイデア/Issue 化（取りこぼし防止）
+    instructions: |
+      直近の動き（オープン Issue・PR・直近コミット）を確認し、対応が必要なのに記録されていない事項が
+      あれば ideas/ に 1 ファイル追記するか GitHub Issue を起票する（intent-routing.md の R-2/R-3）。
+      タグは既存語彙に寄せ、保存後に `python3 tools/build_index.py --quiet` を実行。要対応が無ければ
+      何もせず「異常なし」と報告。作業は claude/ ブランチ + PR。日時は JST。
+      本ジョブは Issue/PR 監視・起票に GitHub MCP を使うため PAT(GH_TOKEN)登録を前提とする。PAT 未登録時は
+      「PAT 未登録のためスキップ」と報告し、何も行わずに早期終了する（main 直 push は禁止のため直コミットは試みない）。
+
+  - id: inbox-triage
+    cron: "0 7 * * 2,5"       # 火・金 07:00 JST（週 2 回・火金朝 8:00 の発火で実行される）
+    enabled: true
+    model: haiku
+    title: inbox 定期トリアージ（idea/bookmark Issue の整理・ラベル管理）
+    instructions: |
+      inbox-groomer スキル（.claude/skills/inbox-groomer/SKILL.md）を起動し、kind:idea / kind:bookmark
+      ラベル付き（および kind: 未付与で idea/bookmark と推定される）open Issue を 5 フェーズで
+      トリアージする: ① ラベル/ファイル補完（GitHub UI 発 Issue へのファイル作成 + タグ付与 +
+      build_index.py）② 重複検出（コメントのみ・自律クローズ禁止）③ 30 日超 stale の棚卸し候補化
+      （status:archived 付与）④ status:ingested の wiki ingest 実行 ⑤ check_index_sync.py 同期確認。
+      ファイル変更は claude/ ブランチ + PR（main 直 push 禁止）。日時は JST。
+      本ジョブは Issue 操作に GitHub MCP を使うため PAT(GH_TOKEN)登録を前提とする。PAT 未登録時は
+      フェーズ⑤（同期確認）のみ実行し、「PAT 未登録のため Issue トリアージをスキップ」と報告して終了する。

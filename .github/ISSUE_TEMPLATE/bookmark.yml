@@ -1,0 +1,12 @@
+name: ブックマーク
+description: あとで読みたい URL を放り込む（タイトル・タグの補完は Claude が定期トリアージで行う）
+labels: ["kind:bookmark"]
+title: "bookmark: "
+body:
+  - type: input
+    id: url
+    attributes:
+      label: URL
+      placeholder: "https://..."
+    validations:
+      required: true

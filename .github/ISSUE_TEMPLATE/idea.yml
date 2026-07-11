@@ -1,0 +1,12 @@
+name: アイデア
+description: 思いついたことをそのまま放り込む（整理は Claude がやる）
+labels: ["kind:idea"]
+title: "idea: 〇〇があったら便利そう"
+body:
+  - type: textarea
+    id: body
+    attributes:
+      label: 詳細（1 行でも空でも OK）
+      placeholder: "思いついたまま書く。タグ・分類・関連補完は Claude が定期トリアージで行う。"
+    validations:
+      required: false
